@@ -1,0 +1,94 @@
+from django.shortcuts import render, redirect
+from .models import Student
+import json
+import firebase_admin
+from firebase_admin import credentials, storage
+from django.http import JsonResponse
+
+# Initialize Firebase app
+cred = credentials.Certificate('chatapp/service_account.json')
+firebase_admin.initialize_app(cred, {
+    'storageBucket': 'chatbot-9324e.appspot.com'
+})
+
+# Reference to the Firebase Storage bucket
+storage_bucket = storage.bucket()
+
+def home(request):
+    return render(request, 'chatbot/home.html')
+
+def register_new_student(request):
+    if request.method == 'POST':
+        name = request.POST.get('name')
+        email = request.POST.get('email')
+        password = request.POST.get('password')
+        mobile = request.POST.get('mobile')
+        location = request.POST.get('location')
+        # Similarly, get other fields as needed
+
+        # Create a new student instance and save it to the database
+        student = Student(name=name, email=email, password=password, mobile=mobile, location=location)
+        student.save()
+
+        return redirect('chatbot')
+    return render(request, 'chatbot/register.html')
+
+def login_existing_student(request):
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        if Student.objects.filter(name=username, password=password).exists():
+            return redirect('chatbot')
+    return render(request, 'chatbot/login.html')
+
+def chatbot(request):
+    if request.method == 'POST':
+        message = request.POST.get('message')
+        response = process_message(message)
+        return JsonResponse({
+            'response': response
+        })
+
+    return render(request, 'chatbot/chatbot.html')
+
+def student_list(request):
+    students = Student.objects.all()
+    return render(request, 'chatbot/student_list.html', {'students': students})
+
+def process_message(user_query):
+    # if user_query.lower().startswith('notes for'):
+    #     subject = user_query[10:].strip()
+    #     notes = notes_ref.child(subject).get()
+    #     if notes:
+    #         return notes
+    #     else:
+    #         return f"Notes for {subject} are not available at the moment. Is there anything else I can help you with?"
+    if 'notes' in user_query.lower():
+        # Search for notes in Firebase Storage
+        keyword = user_query.lower().replace('notes', '').strip()
+        matching_files = [blob for blob in storage_bucket.list_blobs() if keyword in blob.name.lower()]
+
+        if matching_files:
+            # Return a list of matching files with download links
+            response = "Here are the matching files:\n"
+            for blob in matching_files:
+                download_url = f"https://firebasestorage.googleapis.com/v0/b/chatbot-9324e.appspot.com/o/{blob.name}?alt=media"# Expiration time in seconds (1 hour in this case)
+                response += f"<a href='{download_url}' download='{blob.name}'>{blob.name}</a><br>"
+            return response
+        else:
+            return f"No files found for '{keyword}'. Is there anything else I can help you with?"
+    else:
+        return "I'm sorry, but I don't understand that request. Please specify the subject or document you are looking for."
+{
+  "type": "service_account",
+  "project_id": "chatbot-9324e",
+  "private_key_id": "062e86e6798ffb77621491a495e530f8413e5417",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDAuHrXZSFgeb0y\nYZdyr9wsJq0E00pJJcUKIhUuYuCMPeu//Myy0NAz0s3xxN42lOcrvx4nPwT463j9\noNyjfSSZDYvYq3OMog4h4ZF9hTIrQulJc7DZQCJzgql9M4mOTEqrrv0hbyT+oBxz\n6XhBn76tBac4YLj9GUG0y/ak3KD9s3yjQV3y2UZcsdAP3HDPtc5xf1xUJrws+yIp\npnw5K+XN8atHdPOXatYyCDgcBxz/E3UiI4TY9qBdmOIjn7HTMUxZOhYZgojIV0jl\nTQMDOwb9xUEbeBN+W0FWPgucZ+UV/3mPqB750Ep9goyRauBpDhIGJh1GkP4bXQLK\njJb9jzmtAgMBAAECggEAAWCDlKwGF+5BSaXeR1O5IcQ2owxotMPftl/4HVw4uQDH\nk/wD0e0eUnOYDHrY3qTGQyZ3DAg0VsTVBkLn3GNJOkR9HuZaIQg17ngXedDUbrfr\nZ9O08BjXVpD5iOdbrxvld1LElzozRTN1kol5nft+Y6a7cguCMctmn7CMUlaOZqfk\nzJ630LPayX+4YTS7jYqh+IJ2W86up2h9YNQZR2JUL+Ja+D/cA7tKmmC49tvxkz+G\n8V6qR3Zu+kFdW5etmXzQ+P+fuTwBMtJJ6BgAbz314gIR673sUrzZ3+6LqVp0qQU3\nYfIV3NV7qV+zQ0DrpAO6l7IDlDm4ZWJyoj8uy0IlBQKBgQDhQtzj8APO9ics5OJg\n6L7uykRvsyU1chgq+VpUzN9YGdTbBk2W+8FciJ1eZimE6MKyVTKQorRuCW0ysqJm\nGCEi4VwMJb2j7p1/lIzT4o4Xz/W1seMrlrJhuUbnJ+Y1zraB9vlui1q3dVJXQ40x\n3aQyUh0IYTagTnjPCx4CUrExEwKBgQDbBN1rFkgw/YMXCnlEaIy1RD3Zj31H0vFP\nTJyNhj+IsYkxPFBF22sFutqJMDBf0cM8XrJKDaB7GkmGaMhf7z0PNUVla83N7lco\nFaoYGZDdVBrrsZBj21ZLXTZayw9x1A2cRsTZNgcBHa9YzEQGYnngSOKOaU2LxagK\n1SWN/GYCPwKBgBxzClzLUl/QHNCBs8mTe5HC//Ovh3KBj2XWCj+NhGOnF4f1+tSn\nxRr/sghbFMFReE13jyRPOERxclYl03bbc0vpdGugVJwgpcmYJFUaVuHRBPJGni9C\nIBNRiA/nrR58lfZCD+yTMwjai2S0BmAW4wbr8fi99l02q/FSMR8P/Ir7AoGAR+GX\n3d6JQPLjBDvewvHhRFiqR+4M+vajVhhZxSULUwyZbzxRSCwUOuQxdxcGuVv5zKVz\ntFQ2mFBvUxqusLWu/3/HT9sKx4xytGgv1AsH/WvuDe7P6cYB02g7P58naX9kHCcp\n0fQmZlpcwzL/HG1TfKXPHVg4KCht12hPFAODYzcCgYEA2G9AtRgDJnEIGgc2TAk3\nUjOOHUseLB49GkhI7+YJCjRUuZNopDoKyQgo7zENgS4iAOSvlyilg4Lx8+8H0H1x\nuzBELU+faU22ac1B3/QP+U+7iDUaQ/cUyoQlGeAc5DncKdygqkYaDIRslzUO2Ue4\nhzvGguuHs5XjktBL2E0zWrY=\n-----END PRIVATE KEY-----\n",
+  "client_email": "firebase-adminsdk-61p24@chatbot-9324e.iam.gserviceaccount.com",
+  "client_id": "118301581530227496069",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-61p24%40chatbot-9324e.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
